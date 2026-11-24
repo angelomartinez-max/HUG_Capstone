@@ -1,6 +1,7 @@
 // Hug - Chatbot screen ("Chat with Pat")
 // Opened by the big star button in the bottom bar.
 import '../services/chatbot_service.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'dart:math';
 
@@ -46,6 +47,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // true = the text box has something in it (turns the send button on)
   bool hasText = false;
 
+  // Speech-to-text
+  final stt.SpeechToText speech = stt.SpeechToText();
+
+  bool speechEnabled = false;
+  bool isListening = false;
+  bool micBusy = false;
+  bool acceptSpeechResults = false;
+
   // Maximum length of one message
   final int maxMessageLength = 500;
 
@@ -69,11 +78,126 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // ACTIONS
   // ---------------------------------------------------
   // Sends a message (typed text or a quick reply button)
+
+  Future<void> toggleListening() async {
+    if (isWaiting || micBusy) return;
+
+    micBusy = true;
+
+    try {
+      if (speech.isListening) {
+        await speech.stop();
+
+        if (!mounted) return;
+
+        setState(() {
+          isListening = false;
+        });
+
+        return;
+      }
+
+      if (!speechEnabled) {
+        speechEnabled = await speech.initialize(
+          onStatus: (status) {
+            if (!mounted) return;
+
+            setState(() {
+              isListening = status == 'listening';
+            });
+          },
+          onError: (error) {
+            if (!mounted) return;
+
+            setState(() {
+              isListening = false;
+              acceptSpeechResults = false;
+            });
+          },
+        );
+      }
+
+      if (!mounted) return;
+
+      if (!speechEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Speech recognition is unavailable. '
+              'Please check your microphone permission.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      acceptSpeechResults = true;
+
+      await speech.listen(
+        onResult: (result) {
+          if (!mounted || !acceptSpeechResults || isWaiting) {
+            return;
+          }
+
+          String recognizedText = result.recognizedWords;
+
+          if (recognizedText.length > maxMessageLength) {
+            recognizedText =
+                recognizedText.substring(0, maxMessageLength);
+          }
+
+          setState(() {
+            messageController.text = recognizedText;
+
+            messageController.selection =
+                TextSelection.collapsed(
+                  offset: recognizedText.length,
+                );
+
+            hasText = recognizedText.trim().isNotEmpty;
+          });
+        },
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        isListening = speech.isListening;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        isListening = false;
+        acceptSpeechResults = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to start voice recognition.'),
+        ),
+      );
+    } finally {
+      micBusy = false;
+    }
+  }
+
+
   Future<void> sendMessage(String text) async {
     final String message = text.trim();
 
     // Do nothing for empty text, or while Pat is still answering
     if (message.isEmpty || isWaiting) return;
+
+    acceptSpeechResults = false;
+
+    if (speech.isListening) {
+      await speech.stop();
+    }
+
+    if (!mounted || isWaiting) return;
+
+    isListening = false;
 
     setState(() {
       messages.add(ChatMessage(text: message, fromUser: true));
@@ -116,13 +240,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    // Free the memory used by the controllers
-    messageController.dispose();
-    scrollController.dispose();
-    super.dispose();
-  }
+@override
+void dispose() {
+  acceptSpeechResults = false;
+  speech.cancel();
+  chatbotService.clearHistory();
+  messageController.dispose();
+  scrollController.dispose();
+  super.dispose();
+}
 
   // ---------------------------------------------------
   // SCREEN
@@ -341,10 +467,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           children: [
             // Mic button
             IconButton(
-              onPressed: () {
-                // TODO: start voice input here
-              },
-              icon: const Icon(Icons.mic_none, color: kCoral, size: 26),
+              onPressed: isWaiting ? null : toggleListening,
+              tooltip: isListening
+                  ? 'Stop listening'
+                  : 'Start voice input',
+              icon: Icon(
+                isListening ? Icons.mic : Icons.mic_none,
+                color: isListening ? Colors.red : kCoral,
+                size: 26,
+              ),
             ),
 
             // Text box
