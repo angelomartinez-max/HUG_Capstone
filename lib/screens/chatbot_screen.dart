@@ -1,6 +1,7 @@
 // Hug - Chatbot screen ("Chat with Pat")
 // Opened by the big star button in the bottom bar.
 import '../services/chatbot_service.dart';
+
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'dart:math';
@@ -22,7 +23,11 @@ class ChatMessage {
 }
 
 class ChatbotScreen extends StatefulWidget {
-  const ChatbotScreen({super.key});
+  // null = the student opened the chat manually.
+  // Has text = the watch trigger opened the chat (hidden context for Pat).
+  final String? triggerContext;
+
+  const ChatbotScreen({super.key, this.triggerContext});
 
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
@@ -47,6 +52,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // true = the text box has something in it (turns the send button on)
   bool hasText = false;
 
+  // true = Pat decided the student should see the questionnaire button
+  bool showScreeningButton = false;
+
   // Speech-to-text
   final stt.SpeechToText speech = stt.SpeechToText();
 
@@ -65,20 +73,55 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   static const Color kBackground = Color(0xFFF4F4F4);
 
   // ---------------------------------------------------
+  // START (trigger)
+  // ---------------------------------------------------
+  @override
+  void initState() {
+    super.initState();
+    final String? ctx = widget.triggerContext;
+    if (ctx != null && ctx.trim().isNotEmpty) {
+      chatbotService.setHiddenContext(ctx);
+      startTriggeredChat();
+    }
+  }
+
+  // Pat asks the first question when the watch trigger opened the chat
+  Future<void> startTriggeredChat() async {
+    setState(() {
+      isWaiting = true;
+    });
+
+    String reply;
+    try {
+      final ChatReply result = await chatbotService.getOpeningQuestion();
+      reply = result.reply;
+    } catch (error) {
+      debugPrint('Pat opening error: $error');
+      // Only used when Pat cannot be reached (no internet or server error).
+      reply = 'Hi, it\'s Pat. Just checking in. How are you feeling today?';
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      messages.add(ChatMessage(text: reply, fromUser: false));
+      isWaiting = false;
+    });
+    scrollToBottom();
+  }
+
+  // ---------------------------------------------------
   // CHATBOT (BACKEND)
   // ---------------------------------------------------
-  // Sends the user's message to the chatbot and returns Pat's answer.
-  // Right now it only waits a moment and returns a fixed placeholder text.
-  // Replace the body with your real backend / AI call.
-  Future<String> getPatReply(String userMessage) async {
+  // Sends the user's message to the chatbot and returns Pat's answer
+  // together with the decision label.
+  Future<ChatReply> getPatReply(String userMessage) async {
     return await chatbotService.getReply(userMessage);
   }
 
   // ---------------------------------------------------
   // ACTIONS
   // ---------------------------------------------------
-  // Sends a message (typed text or a quick reply button)
-
   Future<void> toggleListening() async {
     if (isWaiting || micBusy) return;
 
@@ -142,17 +185,15 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           String recognizedText = result.recognizedWords;
 
           if (recognizedText.length > maxMessageLength) {
-            recognizedText =
-                recognizedText.substring(0, maxMessageLength);
+            recognizedText = recognizedText.substring(0, maxMessageLength);
           }
 
           setState(() {
             messageController.text = recognizedText;
 
-            messageController.selection =
-                TextSelection.collapsed(
-                  offset: recognizedText.length,
-                );
+            messageController.selection = TextSelection.collapsed(
+              offset: recognizedText.length,
+            );
 
             hasText = recognizedText.trim().isNotEmpty;
           });
@@ -173,16 +214,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to start voice recognition.'),
-        ),
+        const SnackBar(content: Text('Unable to start voice recognition.')),
       );
     } finally {
       micBusy = false;
     }
   }
 
-
+  // Sends a message (typed text or a quick reply button)
   Future<void> sendMessage(String text) async {
     final String message = text.trim();
 
@@ -207,24 +246,50 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
     scrollToBottom();
 
-    String reply;
+    ChatReply result;
 
     try {
-      reply = await getPatReply(message);
+      result = await getPatReply(message);
     } catch (error) {
-        debugPrint('Pat chatbot error: $error');
-        reply = 'Sorry, I am having trouble connecting right now. '
-        'Please try again in a moment.';
-}
+      debugPrint('Pat chatbot error: $error');
+      // When Pat cannot be reached, no decision is made.
+      result = const ChatReply(
+        reply:
+            'Sorry, I am having trouble connecting right now. '
+            'Please try again in a moment.',
+        outcome: ChatOutcome.continueChat,
+      );
+    }
 
     // The screen may be closed while we waited
     if (!mounted) return;
 
     setState(() {
-      messages.add(ChatMessage(text: reply, fromUser: false));
+      messages.add(ChatMessage(text: result.reply, fromUser: false));
       isWaiting = false;
+
+      // Pat's decision:
+      // offerScreening -> show the questionnaire button
+      // keepMonitoring -> nothing to show, the watch keeps monitoring
+      // continueChat   -> no change, the conversation goes on
+      if (result.outcome == ChatOutcome.offerScreening) {
+        showScreeningButton = true;
+      } else if (result.outcome == ChatOutcome.keepMonitoring) {
+        showScreeningButton = false;
+      }
     });
     scrollToBottom();
+  }
+
+  // Opens the screening questionnaires (PSS-4, PHQ-9, GAD-7).
+  // TODO: replace this placeholder with the real navigation, for example
+  // Navigator.push(context, MaterialPageRoute(builder: (_) => Pss4Screen())).
+  void openScreening() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('The check-in questionnaire is coming soon.'),
+      ),
+    );
   }
 
   // Scrolls the list down to the newest message
@@ -240,23 +305,25 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
-@override
-void dispose() {
-  acceptSpeechResults = false;
-  speech.cancel();
-  chatbotService.clearHistory();
-  messageController.dispose();
-  scrollController.dispose();
-  super.dispose();
-}
+  @override
+  void dispose() {
+    acceptSpeechResults = false;
+    speech.cancel();
+    chatbotService.clearHistory();
+    messageController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
 
   // ---------------------------------------------------
   // SCREEN
   // ---------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    // The start screen (mascot + greeting) shows until the first message
-    final bool isEmpty = messages.isEmpty;
+    // The start screen (mascot + greeting) shows until the first message.
+    // When the trigger opened the chat, show the start view only until
+    // Pat's first question arrives (the typing bubble shows instead).
+    final bool isEmpty = messages.isEmpty && !isWaiting;
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -267,6 +334,8 @@ void dispose() {
             Expanded(child: isEmpty ? buildStartView() : buildMessageList()),
             // Quick replies only show before the chat starts
             if (isEmpty) buildQuickReplies(),
+            // Shows only when Pat decided the student should do the check-in
+            if (showScreeningButton) buildScreeningButton(),
             buildInputBar(),
             buildDisclaimer(),
           ],
@@ -445,6 +514,35 @@ void dispose() {
   }
 
   // ---------------------------------------------------
+  // SCREENING BUTTON: shown when Pat decides to offer the questionnaire
+  // ---------------------------------------------------
+  Widget buildScreeningButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: GestureDetector(
+        onTap: openScreening,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: kCoral,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: const Text(
+            'Take a quick check-in',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------
   // INPUT BAR: mic, text box and send button
   // ---------------------------------------------------
   Widget buildInputBar() {
@@ -468,9 +566,7 @@ void dispose() {
             // Mic button
             IconButton(
               onPressed: isWaiting ? null : toggleListening,
-              tooltip: isListening
-                  ? 'Stop listening'
-                  : 'Start voice input',
+              tooltip: isListening ? 'Stop listening' : 'Start voice input',
               icon: Icon(
                 isListening ? Icons.mic : Icons.mic_none,
                 color: isListening ? Colors.red : kCoral,

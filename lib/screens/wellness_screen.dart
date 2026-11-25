@@ -3,11 +3,15 @@
 import 'dart:async';
 
 import 'package:health/health.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/colors.dart';
+import '../services/background_trigger.dart';
 import '../services/health_service.dart';
+import '../services/trigger_runner.dart';
+import 'chatbot_screen.dart'; // same folder as this file
 
 class WellnessScreen extends StatefulWidget {
   // Not used anymore (the name now comes from the logged-in user).
@@ -36,6 +40,18 @@ class _WellnessScreenState extends State<WellnessScreen>
   int? _steps;
   int? _heartRate;
   DateTime? _lastSynced;
+
+  // ---------------------------------------------------
+  // TRIGGER (decides when Pat starts a chat)
+  // ---------------------------------------------------
+  final TriggerRunner _runner = TriggerRunner(config: kActiveTriggerConfig);
+  bool _checkingTrigger = false; // a check is running
+  bool _chatOpen = false; // the chatbot is already on screen
+  bool _backgroundStarted = false; // background check already started
+  DateTime _lastCheck = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // How often the trigger is checked (not every 10 seconds)
+  static const Duration kTriggerEvery = Duration(minutes: 15);
 
   // Sleep is not wired yet (waiting for real sleep records)
   static const String sleepStatus = '--';
@@ -99,6 +115,7 @@ class _WellnessScreenState extends State<WellnessScreen>
 
     if (connected) {
       await _loadData();
+      _startBackground();
     } else {
       setState(() => _loading = false);
     }
@@ -123,10 +140,56 @@ class _WellnessScreenState extends State<WellnessScreen>
         _lastSynced = hr?.dateTo;
         _loading = false;
       });
+      _checkTrigger(); // runs at most once every 15 minutes
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     } finally {
       _refreshing = false;
+    }
+  }
+
+  // Starts the 15-minute check that also works when Hug is closed
+  Future<void> _startBackground() async {
+    if (_backgroundStarted) return;
+    _backgroundStarted = true;
+    await HugBackground.startChecking();
+  }
+
+  // Checks the watch data and opens Pat if the trigger says so.
+  // It does nothing if it ran less than 15 minutes ago, or if a check
+  // is already running, or if the chatbot is already open.
+  Future<void> _checkTrigger() async {
+    if (_checkingTrigger || _chatOpen) return;
+    if (DateTime.now().difference(_lastCheck) < kTriggerEvery) return;
+
+    _checkingTrigger = true;
+    try {
+      // The background check saves from another process, so refresh first
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+
+      final run = await _runner.run(saveIfTriggered: !kTriggerTestMode);
+      _lastCheck = DateTime.now();
+      await NotificationLog.markCheck();
+
+      if (run != null && run.result.shouldTrigger && mounted) {
+        _chatOpen = true;
+        await prefs.remove(kPendingContextKey); // avoid a second chat later
+        await NotificationLog.add(run.result.type, source: 'app');
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ChatbotScreen(triggerContext: buildChatbotContext(run.result)),
+          ),
+        );
+        _chatOpen = false;
+      }
+    } catch (e) {
+      debugPrint('Trigger check failed: $e');
+      _chatOpen = false;
+    } finally {
+      _checkingTrigger = false;
     }
   }
 
@@ -228,6 +291,7 @@ class _WellnessScreenState extends State<WellnessScreen>
       case ConnectResult.connected:
         setState(() => _connected = true);
         await _loadData();
+        _startBackground();
         break;
       case ConnectResult.notInstalled:
         _showMessage('Install Health Connect, then try again.');
@@ -285,6 +349,8 @@ class _WellnessScreenState extends State<WellnessScreen>
     if (yes != true) return;
 
     await HealthService.instance.disconnect();
+    await HugBackground.stopChecking();
+    _backgroundStarted = false;
     if (!mounted) return;
     setState(() {
       _connected = false;
