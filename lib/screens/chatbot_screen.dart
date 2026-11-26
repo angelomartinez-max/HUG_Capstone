@@ -1,6 +1,11 @@
 // Hug - Chatbot screen ("Chat with Pat")
 // Opened by the big star button in the bottom bar.
 import '../services/chatbot_service.dart';
+import '../services/screening_service.dart';
+
+import 'dart:async';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -53,7 +58,29 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   bool hasText = false;
 
   // true = Pat decided the student should see the questionnaire button
-  bool showScreeningButton = false;
+  final ScreeningService screeningService = ScreeningService();
+  final String? ownerId = Supabase.instance.client.auth.currentUser?.id;
+  StreamSubscription<AuthState>? authSubscription;
+  List<Map<String, dynamic>> activeSessions = [];
+  Map<String, dynamic>? screening;
+  int? selectedAnswer;
+  bool openingScreening = false;
+  bool checking = true;
+  bool checkFailed = false;
+  bool accountChanged = false;
+  bool get validOwner =>
+      mounted &&
+      !accountChanged &&
+      ownerId != null &&
+      Supabase.instance.client.auth.currentUser?.id == ownerId;
+  bool get chatLocked =>
+      checking ||
+      checkFailed ||
+      accountChanged ||
+      activeSessions.isNotEmpty ||
+      screening != null;
+  bool get showScreeningButton =>
+      activeSessions.isNotEmpty && screening == null;
 
   // Speech-to-text
   final stt.SpeechToText speech = stt.SpeechToText();
@@ -78,10 +105,64 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   @override
   void initState() {
     super.initState();
-    final String? ctx = widget.triggerContext;
+    authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+      event,
+    ) {
+      if (!mounted || event.session?.user.id == ownerId) return;
+      acceptSpeechResults = false;
+      speech.cancel();
+      chatbotService.clearHistory();
+      messageController.clear();
+      setState(() {
+        accountChanged = true;
+        messages.clear();
+        activeSessions = [];
+        screening = null;
+        selectedAnswer = null;
+      });
+    });
+    initializeChat();
+  }
+
+  Future<void> initializeChat() async {
+    await refreshScreenings();
+    if (!validOwner || chatLocked) return;
+    final ctx = widget.triggerContext;
     if (ctx != null && ctx.trim().isNotEmpty) {
       chatbotService.setHiddenContext(ctx);
-      startTriggeredChat();
+      await startTriggeredChat();
+    }
+  }
+
+  Future<void> refreshScreenings() async {
+    if (!validOwner) return;
+    setState(() {
+      checking = true;
+      checkFailed = false;
+    });
+    try {
+      final ping = await screeningService.ping();
+      if (!validOwner) return;
+      final sessions = ping['test_access'] == true
+          ? await screeningService.getActiveSessions()
+          : <Map<String, dynamic>>[];
+      if (!validOwner) return;
+      setState(() {
+        activeSessions = sessions;
+        checking = false;
+      });
+      if (sessions.isNotEmpty &&
+          sessions.first['status'] != 'pending' &&
+          screening == null) {
+        await openScreening();
+      }
+    } catch (_) {
+      if (validOwner) {
+        setState(() {
+          checking = false;
+          checkFailed = true;
+        });
+      }
     }
   }
 
@@ -101,12 +182,13 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       reply = 'Hi, it\'s Pat. Just checking in. How are you feeling today?';
     }
 
-    if (!mounted) return;
+    if (!validOwner) return;
 
     setState(() {
       messages.add(ChatMessage(text: reply, fromUser: false));
       isWaiting = false;
     });
+    await refreshScreenings();
     scrollToBottom();
   }
 
@@ -123,7 +205,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // ACTIONS
   // ---------------------------------------------------
   Future<void> toggleListening() async {
-    if (isWaiting || micBusy) return;
+    if (chatLocked || isWaiting || micBusy) return;
 
     micBusy = true;
 
@@ -178,7 +260,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
       await speech.listen(
         onResult: (result) {
-          if (!mounted || !acceptSpeechResults || isWaiting) {
+          if (!mounted || !acceptSpeechResults || isWaiting || chatLocked) {
             return;
           }
 
@@ -226,7 +308,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     final String message = text.trim();
 
     // Do nothing for empty text, or while Pat is still answering
-    if (message.isEmpty || isWaiting) return;
+    if (message.isEmpty || isWaiting || chatLocked) return;
 
     acceptSpeechResults = false;
 
@@ -234,7 +316,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       await speech.stop();
     }
 
-    if (!mounted || isWaiting) return;
+    if (!validOwner || isWaiting || chatLocked) return;
 
     isListening = false;
 
@@ -262,32 +344,210 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     }
 
     // The screen may be closed while we waited
-    if (!mounted) return;
+    if (!validOwner) return;
 
     setState(() {
       messages.add(ChatMessage(text: result.reply, fromUser: false));
       isWaiting = false;
-
-      // Pat's decision:
-      // offerScreening -> show the questionnaire button
-      // keepMonitoring -> nothing to show, the watch keeps monitoring
-      // continueChat   -> no change, the conversation goes on
-      if (result.outcome == ChatOutcome.offerScreening) {
-        showScreeningButton = true;
-      } else if (result.outcome == ChatOutcome.keepMonitoring) {
-        showScreeningButton = false;
-      }
     });
+    await refreshScreenings();
     scrollToBottom();
   }
 
-  // Opens the screening questionnaires (PSS-4, PHQ-9, GAD-7).
-  // TODO: replace this placeholder with the real navigation, for example
-  // Navigator.push(context, MaterialPageRoute(builder: (_) => Pss4Screen())).
-  void openScreening() {
+  Future<void> openScreening() async {
+    if (!validOwner || openingScreening || activeSessions.isEmpty) return;
+    setState(() => openingScreening = true);
+    try {
+      final data = await screeningService.resumeScreening(
+        activeSessions.first['screening_id'] as String,
+      );
+      if (!validOwner) return;
+      setState(() {
+        screening = data;
+        selectedAnswer = null;
+      });
+      scrollToBottom();
+    } catch (_) {
+      if (validOwner) showScreeningError();
+    } finally {
+      if (validOwner) setState(() => openingScreening = false);
+    }
+  }
+
+  void showScreeningError() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('The check-in questionnaire is coming soon.'),
+        content: Text('Unable to update your check-in. Please try again.'),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> get questions =>
+      List<Map<String, dynamic>>.from(screening?['questions'] as List? ?? []);
+  Map<String, dynamic>? get currentQuestion {
+    final next = screening?['next_question'];
+    for (final q in questions) {
+      if (q['question_number'] == next) return q;
+    }
+    return null;
+  }
+
+  Future<void> advanceScreening() async {
+    if (!validOwner || openingScreening || screening == null) return;
+    final id = screening!['screening_id'] as String;
+    final q = currentQuestion;
+    final answer = selectedAnswer;
+    if (screening!['ready_to_complete'] != true &&
+        (q == null || answer == null)) {
+      return;
+    }
+    setState(() => openingScreening = true);
+    try {
+      if (q != null && screening!['ready_to_complete'] != true) {
+        final saved = await screeningService.saveAnswer(
+          screeningId: id,
+          questionId: q['question_id'] as String,
+          answerValue: answer!,
+        );
+        if (!validOwner) return;
+        final updated = await screeningService.resumeScreening(id);
+        if (!validOwner) return;
+        setState(() {
+          screening = updated;
+          selectedAnswer = null;
+        });
+        if (saved['safety_flag'] == true) {
+          setState(
+            () => messages.add(
+              const ChatMessage(
+                text: 'If you might hurt yourself or are in immediate danger, call 911 or go to the nearest emergency department. Reach out to someone you trust or a counselor.',
+                fromUser: false,
+              ),
+            ),
+          );
+        }
+      }
+      if (screening!['ready_to_complete'] == true) {
+        await screeningService.completeScreening(id);
+        if (!validOwner) return;
+        setState(() {
+          screening = null;
+          selectedAnswer = null;
+          messages.add(
+            const ChatMessage(
+              text: 'Your check-in has been saved.',
+              fromUser: false,
+            ),
+          );
+        });
+        await refreshScreenings();
+      }
+    } catch (_) {
+      if (validOwner) showScreeningError();
+    } finally {
+      if (validOwner) setState(() => openingScreening = false);
+      scrollToBottom();
+    }
+  }
+
+  Widget buildScreeningCard() {
+    final q = currentQuestion;
+    final meta = screening!['questionnaire'] as Map;
+    final ready = screening!['ready_to_complete'] == true;
+    final number = (q?['question_number'] as int?) ?? questions.length;
+    final options = (q?['answer_options'] as List?) ?? [];
+    return Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '${meta['code']}',
+                  style: const TextStyle(
+                    color: kCoral,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Text('Question $number of ${questions.length}'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: questions.isEmpty ? 0 : number / questions.length,
+              color: kCoral,
+            ),
+            const SizedBox(height: 12),
+            Text('${meta['instructions'] ?? ''}'),
+            const SizedBox(height: 12),
+            if (q != null)
+              Text(
+                '${q['question_text']}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            for (final option in options)
+              InkWell(
+                onTap: openingScreening
+                    ? null
+                    : () => setState(
+                        () => selectedAnswer = option['value'] as int,
+                      ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Icon(
+                        selectedAnswer == option['value']
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: kCoral,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${option['label'] ?? option['text'] ?? option['value']}',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (ready) const Text('Your answers are saved. Submit to finish.'),
+            if (screening!['safety_flag'] == true ||
+                (meta['code'] == 'PHQ-9' &&
+                    number == 9 &&
+                    (selectedAnswer ?? 0) > 0))
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'If you might hurt yourself or are in immediate danger, call 911 or go to the nearest emergency department. Reach out to someone you trust or a counselor. You do not need to finish this check-in to get help.',
+                ),
+              ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kCoral,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed:
+                    openingScreening || (!ready && selectedAnswer == null)
+                    ? null
+                    : advanceScreening,
+                child: Text(
+                  ready || number == questions.length
+                      ? 'Submit check-in'
+                      : 'Next question',
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -307,6 +567,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   @override
   void dispose() {
+    authSubscription?.cancel();
     acceptSpeechResults = false;
     speech.cancel();
     chatbotService.clearHistory();
@@ -323,7 +584,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     // The start screen (mascot + greeting) shows until the first message.
     // When the trigger opened the chat, show the start view only until
     // Pat's first question arrives (the typing bubble shows instead).
-    final bool isEmpty = messages.isEmpty && !isWaiting;
+    final bool isEmpty = messages.isEmpty && !isWaiting && !chatLocked;
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -335,7 +596,20 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             // Quick replies only show before the chat starts
             if (isEmpty) buildQuickReplies(),
             // Shows only when Pat decided the student should do the check-in
-            if (showScreeningButton) buildScreeningButton(),
+            if (checking) const LinearProgressIndicator(),
+            if (checkFailed)
+              TextButton(
+                onPressed: refreshScreenings,
+                child: const Text('Retry check-in status'),
+              ),
+            if (chatLocked)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  'For urgent help, call 911 or contact a trusted person. You may leave this screen at any time.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             buildInputBar(),
             buildDisclaimer(),
           ],
@@ -417,13 +691,21 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   // ---------------------------------------------------
   Widget buildMessageList() {
     // One extra row at the end for "Pat is typing..." while waiting
-    final int count = messages.length + (isWaiting ? 1 : 0);
+    final int count =
+        messages.length +
+        (isWaiting ? 1 : 0) +
+        ((showScreeningButton || screening != null) ? 1 : 0);
 
     return ListView.builder(
       controller: scrollController,
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
       itemCount: count,
       itemBuilder: (BuildContext context, int index) {
+        if (index >= messages.length + (isWaiting ? 1 : 0)) {
+          return screening != null
+              ? buildScreeningCard()
+              : buildScreeningButton();
+        }
         if (index == messages.length) {
           return buildBubble('Pat is typing...', fromUser: false, faded: true);
         }
@@ -523,7 +805,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: GestureDetector(
-        onTap: openScreening,
+        onTap: openingScreening || isWaiting ? null : openScreening,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -532,7 +814,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             borderRadius: BorderRadius.circular(24),
           ),
           child: const Text(
-            'Take a quick check-in',
+            'Start Mental Well-Being Check-In',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
@@ -568,7 +850,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           children: [
             // Mic button
             IconButton(
-              onPressed: isWaiting ? null : toggleListening,
+              onPressed: isWaiting || chatLocked ? null : toggleListening,
               tooltip: isListening ? 'Stop listening' : 'Start voice input',
               icon: Icon(
                 isListening ? Icons.mic : Icons.mic_none,
@@ -581,6 +863,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             Expanded(
               child: TextField(
                 controller: messageController,
+                enabled: !chatLocked && !isWaiting,
                 cursorColor: kCoral,
                 minLines: 1,
                 maxLines: 4,
@@ -615,7 +898,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: (hasText && !isWaiting)
+                  color: (hasText && !isWaiting && !chatLocked)
                       ? kCoral
                       : kCoral.withValues(alpha: 0.5),
                 ),

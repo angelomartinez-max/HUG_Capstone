@@ -1,23 +1,23 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// What Pat decided after reading the student's answer.
 enum ChatOutcome {
-  // The conversation goes on, no decision yet.
   continueChat,
-
-  // Signs of stress, anxiety or low mood: show the questionnaire button.
   offerScreening,
-
-  // Ordinary explanation (exercise, coffee, rushing): nothing more to do.
   keepMonitoring,
+  medicalAttention,
+  urgentSupport,
 }
 
-// Pat's answer plus the decision label.
 class ChatReply {
   final String reply;
   final ChatOutcome outcome;
+  final List<String> recommendedScreenings;
 
-  const ChatReply({required this.reply, required this.outcome});
+  const ChatReply({
+    required this.reply,
+    required this.outcome,
+    this.recommendedScreenings = const [],
+  });
 }
 
 class ChatbotService {
@@ -25,38 +25,65 @@ class ChatbotService {
 
   String? _sessionId;
   String? _ownerId;
-
-  // Facts from the watch trigger (null = normal manual chat)
   String? _triggerContext;
 
   String? get sessionId => _sessionId;
 
-  // Called by ChatbotScreen when it was opened by the watch trigger
   void setHiddenContext(String context) {
+    final user = _supabase.auth.currentUser;
+
+    if (user == null) {
+      clearHistory();
+      return;
+    }
+
+    if (_ownerId != user.id) {
+      clearHistory();
+      _ownerId = user.id;
+    }
+
     _triggerContext = context;
   }
 
-  // Pat's first message when the chat was opened by the trigger
   Future<ChatReply> getOpeningQuestion() {
     return _send(message: null, opening: true);
   }
 
-  // Normal message from the student
   Future<ChatReply> getReply(String message) {
     return _send(message: message.trim(), opening: false);
   }
 
-  // Turns the text label from the Edge Function into an enum.
-  // Anything unknown or missing becomes "continue" so nothing breaks.
   ChatOutcome _parseOutcome(dynamic value) {
     switch (value) {
       case 'offer_screening':
         return ChatOutcome.offerScreening;
+
       case 'keep_monitoring':
         return ChatOutcome.keepMonitoring;
+
+      case 'medical_attention':
+        return ChatOutcome.medicalAttention;
+
+      case 'urgent_support':
+        return ChatOutcome.urgentSupport;
+
+      case 'continue':
       default:
         return ChatOutcome.continueChat;
     }
+  }
+
+  // Parse and validate recommended questionnaires.
+  List<String> _parseScreenings(dynamic value) {
+    const allowed = {'PSS-4', 'GAD-7', 'PHQ-9'};
+
+    if (value is! List) {
+      return const [];
+    }
+
+    return List<String>.unmodifiable(
+      value.whereType<String>().where(allowed.contains).toSet(),
+    );
   }
 
   Future<ChatReply> _send({
@@ -101,15 +128,25 @@ class ChatbotService {
     // Verify that the account has not changed.
     if (_supabase.auth.currentUser?.id != user.id) {
       clearHistory();
+
       throw Exception('Your session has changed.');
     }
 
     // Retain the session ID for the next message.
     _sessionId = data['session_id'] as String;
 
+    final outcome = _parseOutcome(data['outcome']);
+
+    // Receive the recommended questionnaires.
+    final recommendedScreenings = outcome == ChatOutcome.offerScreening
+        ? _parseScreenings(data['recommended_screenings'])
+        : const <String>[];
+
+    // Return the reply, outcome, and recommendations.
     return ChatReply(
       reply: data['reply'] as String,
-      outcome: _parseOutcome(data['outcome']),
+      outcome: outcome,
+      recommendedScreenings: recommendedScreenings,
     );
   }
 
