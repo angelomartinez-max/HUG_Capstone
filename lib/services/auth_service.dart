@@ -7,29 +7,43 @@ class AuthService {
   Future<bool> signInWithEmail({
     required String email,
     required String password,
+    required String studentNumber,
   }) async {
-    final response = await _supabase.auth.signInWithPassword(
-      email: email.trim(),
-      password: password,
-    );
+    await _supabase.auth.signOut();
 
-    if (response.user == null || response.session == null) {
-      return false;
-    }
+    try {
+      final response = await _supabase.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
 
-    // Only allow accounts with a linked HUG student profile.
-    final profile = await _supabase
-        .from('student_profiles')
-        .select('id')
-        .eq('id', response.user!.id)
-        .maybeSingle();
+      final user = response.user;
 
-    if (profile == null) {
+      if (user == null || response.session == null) {
+        return false;
+      }
+
+      final profile = await _supabase
+          .from('student_profiles')
+          .select('student_number')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final storedStudentNumber =
+          profile?['student_number'] as String?;
+
+      if (storedStudentNumber == null ||
+          storedStudentNumber.toUpperCase() !=
+              studentNumber.trim().toUpperCase()) {
+        await _supabase.auth.signOut();
+        return false;
+      }
+
+      return true;
+    } catch (error) {
       await _supabase.auth.signOut();
-      return false;
+      rethrow;
     }
-
-    return true;
   }
 
   Future<void> signOut() async {

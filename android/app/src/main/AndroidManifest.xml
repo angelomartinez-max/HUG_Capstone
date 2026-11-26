@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet access (needed later for the AI chatbot) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- Internet access (AI chatbot) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Health Connect read permissions -->
@@ -8,12 +10,21 @@
     <uses-permission android:name="android.permission.health.READ_STEPS"/>
     <uses-permission android:name="android.permission.health.READ_SLEEP"/>
 
+    <!-- NEW: read Health Connect while the app is closed -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"/>
+
+    <!-- NEW: show Pat's notification (Android 13 and above) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- Lets the app find the Health Connect app on the phone -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
         </intent>
     </queries>
 

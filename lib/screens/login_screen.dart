@@ -179,6 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return await authService.signInWithEmail(
         email: email,
         password: password,
+        studentNumber: studentNumber,
       );
     } on AuthException catch (error) {
       if (error.code == 'email_not_confirmed' ||

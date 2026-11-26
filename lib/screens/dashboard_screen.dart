@@ -2,8 +2,11 @@
 // The bottom bar now lives in main_shell.dart
 
 import 'dart:math';
+
 import 'package:material_ui/material_ui.dart';
+
 import '../constants/colors.dart';
+import 'notifications_screen.dart'; // same folder as this file
 
 class DashboardScreen extends StatefulWidget {
   // Name shown in the greeting (later this can come from the login)
@@ -111,10 +114,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
         ),
-        // Notification bell button
+        // Notification bell button: opens the Notifications screen
         IconButton(
+          tooltip: 'Notifications',
           onPressed: () {
-            // TODO: open the Notifications screen here
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            );
           },
           icon: const Icon(
             Icons.notifications_none,
@@ -156,8 +163,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     // TODO: open the Daily Check In screen here
                   },
                   child: Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
@@ -266,8 +275,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                     Text(
                       moodNote,
-                      style:
-                      const TextStyle(fontSize: 11, color: Colors.black54),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
                     ),
                   ],
                 ),
@@ -473,8 +484,16 @@ class MoodFacePainter extends CustomPainter {
     pen.strokeCap = StrokeCap.round;
 
     // Angry eyebrows (slanted down toward the middle)
-    canvas.drawLine(Offset(w * 0.20, h * 0.28), Offset(w * 0.44, h * 0.42), pen);
-    canvas.drawLine(Offset(w * 0.80, h * 0.28), Offset(w * 0.56, h * 0.42), pen);
+    canvas.drawLine(
+      Offset(w * 0.20, h * 0.28),
+      Offset(w * 0.44, h * 0.42),
+      pen,
+    );
+    canvas.drawLine(
+      Offset(w * 0.80, h * 0.28),
+      Offset(w * 0.56, h * 0.42),
+      pen,
+    );
 
     // Eyes: white circle with a black dot
     final Paint white = Paint();
@@ -485,7 +504,10 @@ class MoodFacePainter extends CustomPainter {
     black.color = Colors.black;
     black.style = PaintingStyle.fill;
 
-    final List<Offset> eyes = [Offset(w * 0.33, h * 0.53), Offset(w * 0.67, h * 0.53)];
+    final List<Offset> eyes = [
+      Offset(w * 0.33, h * 0.53),
+      Offset(w * 0.67, h * 0.53),
+    ];
     for (final Offset e in eyes) {
       canvas.drawCircle(e, w * 0.09, white);
       canvas.drawCircle(e, w * 0.045, black);
