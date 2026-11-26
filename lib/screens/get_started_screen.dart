@@ -1,9 +1,7 @@
-// Hug - Get Started screen (first screen of the app)
 
 import 'package:material_ui/material_ui.dart';
 import '../constants/colors.dart';
 import '../widgets/collaboration_footer.dart';
-import '../widgets/star_painter.dart';
 import 'welcome_screen.dart';
 
 class GetStartedScreen extends StatelessWidget {
@@ -14,89 +12,106 @@ class GetStartedScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          child: Column(
-            children: [
-              const Spacer(flex: 3),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const Spacer(flex: 3),
 
-              // Title
-              const Text(
-                'Your mental\nhealth matters!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w600,
-                  height: 1.3,
-                  color: Colors.black,
-                ),
-              ),
-              const Spacer(flex: 2),
-
-              // Star mascot (straight, no motion lines)
-              const SizedBox(
-                width: 100,
-                height: 100,
-                child: CustomPaint(painter: StarPainter()),
-              ),
-              const Spacer(flex: 2),
-
-              // Description
-              const Text(
-                "Let's get you set up to monitor your wellness\ntrends and find the support you deserve.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.7,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 22),
-
-              // Get Started button
-              SizedBox(
-                width: 140,
-                height: 30,
-                child: ElevatedButton(
-                  onPressed: () {
-                    // Go to the Welcome screen.
-                    // "push" keeps this screen behind, so back returns here.
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const WelcomeScreen(),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kCoral,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  // Title
+                  const Text(
+                    'Your mental\nwell-being matters!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 29,
+                      fontWeight: FontWeight.w700,
+                      height: 1.25,
+                      color: Colors.black,
+                    ),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Get Started',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+
+                  const Spacer(flex: 2),
+
+                  // HUG Logo
+                  Image.asset(
+                    'assets/images/hug_logo.png',
+                    width: 170,
+                    height: 170,
+                    fit: BoxFit.contain,
+                  ),
+
+                  const Spacer(flex: 2),
+
+                  // Description
+                  const Text(
+                    "Let's get you set up to monitor your wellness "
+                    "trends and find the support you deserve.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.7,
+                      color: Colors.black87,
+                    ),
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  // Get Started Button
+                  SizedBox(
+                    width: 230,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const WelcomeScreen(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kCoral,
+                        foregroundColor: Colors.white,
+                        elevation: 2,
+                        shadowColor: kCoral.withOpacity(0.25),
+                        shape: const StadiumBorder(),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
                         ),
                       ),
-                      Text('→', style: TextStyle(fontSize: 16)),
-                    ],
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Get Started',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          SizedBox(width: 14),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const Spacer(flex: 4),
 
-              // Footer
-              const CollaborationFooter(),
-              const SizedBox(height: 20),
-            ],
-          ),
+                  const Spacer(flex: 3),
+
+                  // Collaboration Footer
+                  const CollaborationFooter(),
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

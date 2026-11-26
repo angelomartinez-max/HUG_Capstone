@@ -4,7 +4,6 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../constants/colors.dart';
-import '../widgets/star_painter.dart';
 import 'chatbot_screen.dart';
 import 'dashboard_screen.dart';
 import 'insights_screen.dart';
@@ -36,7 +35,7 @@ class _MainShellState extends State<MainShell> {
         // "View OCPS contact details" -> go to the Profile tab
         onOpenProfile: () => setState(() => selectedTab = 3),
       ),
-      const ProfileScreen(),
+      ProfileScreen(userName: widget.userName),
     ];
 
     return Scaffold(
@@ -131,10 +130,15 @@ class _MainShellState extends State<MainShell> {
                     ),
                   ],
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: CustomPaint(painter: StarPainter(color: Colors.white)),
-                ),
+                child: Padding(
+                padding: const EdgeInsets.all(8),
+               child: Image.asset(
+               'assets/images/whitestar_logo.png',
+               width: 58,
+               height: 58,
+              fit: BoxFit.contain,
+              ),
+              ),
               ),
             ),
           ),

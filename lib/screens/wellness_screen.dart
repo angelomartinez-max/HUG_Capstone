@@ -635,17 +635,23 @@ class _WellnessScreenState extends State<WellnessScreen>
 
   // Watch icon inside a white circle
   // TODO: replace the Icon with Image.asset(...) if you have your own image
-  Widget buildWatchPicture() {
-    return Container(
-      width: 84,
-      height: 84,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
+ Widget buildWatchPicture() {
+  return Container(
+    width: 84,
+    height: 84,
+    decoration: const BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.white,
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(8),
+      child: Image.asset(
+        'assets/images/smartwatch.png',
+        fit: BoxFit.contain,
       ),
-      child: const Icon(Icons.watch, size: 46, color: kCoral),
-    );
-  }
+    ),
+  );
+}
 
   // ---------------------------------------------------
   // METRIC CARD: icon, label, big status, value chip, caption
@@ -722,10 +728,7 @@ class _WellnessScreenState extends State<WellnessScreen>
                         ),
                       ),
                     ),
-                    const Text(
-                      'Captured by your smartwatch',
-                      style: TextStyle(fontSize: 11, color: Colors.black54),
-                    ),
+                   
                   ],
                 ),
               ),
@@ -762,11 +765,13 @@ class _WellnessScreenState extends State<WellnessScreen>
                   color: Colors.white,
                   border: Border.all(color: const Color(0xFFE0E0E0)),
                 ),
-                child: const Icon(
-                  Icons.volunteer_activism_outlined,
-                  color: kCoral,
-                  size: 30,
-                ),
+               child: Padding(
+               padding: const EdgeInsets.all(8),
+                child: Image.asset(
+               'assets/images/ocps_logo.png',
+            fit: BoxFit.contain,
+           ),
+            ),
               ),
               const SizedBox(width: 16),
               const Expanded(
@@ -783,9 +788,8 @@ class _WellnessScreenState extends State<WellnessScreen>
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Your recent patterns suggest extra support could help. '
-                      'The Office of Counseling and Psychological Services '
-                      'is here to listen.',
+                      'If you need help or someone to talk to, the Office of Counseling and '
+                      'Psychological Services is here whenever you are ready.',
                       style: TextStyle(
                         fontSize: 11,
                         height: 1.35,

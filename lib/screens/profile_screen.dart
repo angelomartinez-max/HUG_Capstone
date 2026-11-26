@@ -9,8 +9,12 @@ import '../services/auth_service.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final String userName;
 
+  const ProfileScreen({
+    super.key,
+    required this.userName,
+  });
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }

@@ -30,11 +30,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               const Spacer(flex: 3),
 
               // Star mascot with motion lines (tilted)
-              const SizedBox(
-                width: 150,
-                height: 150,
-                child: CustomPaint(painter: WelcomeStarPainter()),
-              ),
+             // HUG Logo
+           Image.asset(
+          'assets/images/starlogo.png',
+           width: 150,
+           height: 150,
+           fit: BoxFit.contain,
+           ),
               const SizedBox(height: 4),
 
               // Title
@@ -50,7 +52,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
               // Subtitle
               const Text(
-                'Your Mental Health Companion',
+                'Your Mental Well-being Companion',
                 style: TextStyle(fontSize: 14, color: Colors.black87),
               ),
               const Spacer(flex: 3),

@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:material_ui/material_ui.dart';
 
 import '../constants/colors.dart';
+import 'daily_checkin_screen.dart'; // the Daily Check In pop up (separate file)
 import 'notifications_screen.dart'; // same folder as this file
 
 class DashboardScreen extends StatefulWidget {
@@ -21,8 +22,8 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   // Sample data (later this can come from the sensors or database)
   final int wellnessScore = 70;
-  final String mood = 'STRESSED';
-  final String moodNote = 'Feeling Pressured';
+  String mood = 'STRESSED'; // changes after a Daily Check In
+  String moodNote = 'Feeling Pressured'; // changes after a Daily Check In
   final String heartRate = '118';
   final String eda = '6.5';
   final String sleep = '6h 30m';
@@ -51,6 +52,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
     final DateTime now = DateTime.now();
     return '${months[now.month - 1]} ${now.day}, ${now.year}';
+  }
+
+  // Color of the face (and the first mini bar) for each mood
+  Color moodColor(String m) {
+    switch (m.toUpperCase()) {
+      case 'CALM':
+        return const Color(0xFF7CC9A0);
+      case 'OKAY':
+        return kStarYellow;
+      case 'TIRED':
+        return const Color(0xFFB7A9E0);
+      default: // STRESSED
+        return const Color(0xFFF0443C);
+    }
+  }
+
+  // Small note under the mood name
+  String moodNoteFor(String m) {
+    switch (m.toUpperCase()) {
+      case 'CALM':
+        return 'Feeling Relaxed';
+      case 'OKAY':
+        return 'Feeling Fine';
+      case 'TIRED':
+        return 'Feeling Low Energy';
+      default: // STRESSED
+        return 'Feeling Pressured';
+    }
+  }
+
+  // Opens the Daily Check In pop up and shows the emotion the user chose
+  Future<void> openCheckIn() async {
+    final String? result = await showDailyCheckIn(
+      context,
+      wellnessScore: wellnessScore,
+    );
+
+    // User closed the pop up without saving
+    if (result == null) return;
+
+    setState(() {
+      mood = result.toUpperCase();
+      moodNote = moodNoteFor(result);
+    });
   }
 
   @override
@@ -157,11 +202,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // "Daily Check In" button (white pill)
+                // "Daily Check In" button (white pill): opens the check-in screen
                 GestureDetector(
-                  onTap: () {
-                    // TODO: open the Daily Check In screen here
-                  },
+                  onTap: openCheckIn,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -243,11 +286,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              // Angry face
-              const SizedBox(
+              // Face (changes with the mood)
+              SizedBox(
                 width: 58,
                 height: 58,
-                child: CustomPaint(painter: MoodFacePainter()),
+                child: CustomPaint(
+                  painter: MoodFacePainter(
+                    mood: mood,
+                    color: moodColor(mood),
+                  ),
+                ),
               ),
               const SizedBox(width: 14),
 
@@ -284,11 +332,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
 
-              // Mini bars (first one is red)
+              // Mini bars (first one uses the mood color)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  buildMoodBar(34, const Color(0xFFF0443C)),
+                  buildMoodBar(34, moodColor(mood)),
                   buildMoodBar(16, const Color(0xFFDADADA)),
                   buildMoodBar(16, const Color(0xFFDADADA)),
                   buildMoodBar(16, const Color(0xFFDADADA)),
@@ -460,29 +508,128 @@ class WellnessRingPainter extends CustomPainter {
 }
 
 // =====================================================
-// MOOD FACE (angry face drawn with code)
+// MOOD FACE (face drawn with code, changes with the mood)
 // =====================================================
 class MoodFacePainter extends CustomPainter {
-  const MoodFacePainter();
+  // CALM, OKAY, TIRED or STRESSED
+  final String mood;
+  // Color of the face circle
+  final Color color;
+
+  const MoodFacePainter({required this.mood, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
 
-    // Red circle
+    // Face circle
     final Paint face = Paint();
-    face.color = const Color(0xFFF0443C);
+    face.color = color;
     face.style = PaintingStyle.fill;
     canvas.drawCircle(Offset(w / 2, h / 2), w / 2, face);
 
-    // Black pen for eyebrows and mouth
+    // Black pen for eyebrows, eyes and mouth
     final Paint pen = Paint();
     pen.color = Colors.black;
     pen.style = PaintingStyle.stroke;
     pen.strokeWidth = 3.5;
     pen.strokeCap = StrokeCap.round;
 
+    switch (mood.toUpperCase()) {
+      case 'CALM':
+        drawCalm(canvas, w, h, pen);
+        break;
+      case 'OKAY':
+        drawOkay(canvas, w, h, pen);
+        break;
+      case 'TIRED':
+        drawTired(canvas, w, h, pen);
+        break;
+      default:
+        drawStressed(canvas, w, h, pen);
+    }
+  }
+
+  // CALM: closed happy eyes and a soft smile
+  void drawCalm(Canvas canvas, double w, double h, Paint pen) {
+    final Rect leftEye = Rect.fromCenter(
+      center: Offset(w * 0.33, h * 0.46),
+      width: w * 0.20,
+      height: h * 0.14,
+    );
+    final Rect rightEye = Rect.fromCenter(
+      center: Offset(w * 0.67, h * 0.46),
+      width: w * 0.20,
+      height: h * 0.14,
+    );
+    canvas.drawArc(leftEye, pi, pi, false, pen);
+    canvas.drawArc(rightEye, pi, pi, false, pen);
+
+    final Rect mouth = Rect.fromCenter(
+      center: Offset(w * 0.5, h * 0.62),
+      width: w * 0.36,
+      height: h * 0.20,
+    );
+    canvas.drawArc(mouth, 0, pi, false, pen);
+  }
+
+  // OKAY: round eyes and a big smile
+  void drawOkay(Canvas canvas, double w, double h, Paint pen) {
+    final Paint dot = Paint();
+    dot.color = Colors.black;
+    dot.style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(w * 0.33, h * 0.42), w * 0.06, dot);
+    canvas.drawCircle(Offset(w * 0.67, h * 0.42), w * 0.06, dot);
+
+    final Rect mouth = Rect.fromCenter(
+      center: Offset(w * 0.5, h * 0.55),
+      width: w * 0.52,
+      height: h * 0.32,
+    );
+    canvas.drawArc(mouth, 0, pi, false, pen);
+  }
+
+  // TIRED: sleepy (almost closed) eyes and a flat mouth
+  void drawTired(Canvas canvas, double w, double h, Paint pen) {
+    canvas.drawLine(
+      Offset(w * 0.22, h * 0.44),
+      Offset(w * 0.42, h * 0.48),
+      pen,
+    );
+    canvas.drawLine(
+      Offset(w * 0.78, h * 0.44),
+      Offset(w * 0.58, h * 0.48),
+      pen,
+    );
+
+    // Small eye bags under the eyes
+    final Paint bag = Paint();
+    bag.color = const Color(0x66000000);
+    bag.style = PaintingStyle.stroke;
+    bag.strokeWidth = 2;
+    bag.strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(w * 0.26, h * 0.56),
+      Offset(w * 0.40, h * 0.58),
+      bag,
+    );
+    canvas.drawLine(
+      Offset(w * 0.74, h * 0.56),
+      Offset(w * 0.60, h * 0.58),
+      bag,
+    );
+
+    // Flat mouth
+    canvas.drawLine(
+      Offset(w * 0.38, h * 0.74),
+      Offset(w * 0.62, h * 0.74),
+      pen,
+    );
+  }
+
+  // STRESSED: the angry face from before
+  void drawStressed(Canvas canvas, double w, double h, Paint pen) {
     // Angry eyebrows (slanted down toward the middle)
     canvas.drawLine(
       Offset(w * 0.20, h * 0.28),
@@ -523,5 +670,7 @@ class MoodFacePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant MoodFacePainter oldDelegate) {
+    return oldDelegate.mood != mood || oldDelegate.color != color;
+  }
 }

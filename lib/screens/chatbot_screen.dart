@@ -385,11 +385,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(
-              width: 150,
-              height: 150,
-              child: CustomPaint(painter: PatMascotPainter()),
-            ),
+            SizedBox(
+             width: 150,
+             height: 150,
+              child: Image.asset(
+              'assets/images/hug_logo.png',
+              fit: BoxFit.contain,
+             ),
+              ),
             const SizedBox(height: 14),
             const Text(
               'How can I assist\nyou today?',
